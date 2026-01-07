@@ -14,6 +14,8 @@ from core.exceptions import (
     FraudDetectedException,
     ServiceNotAvailableException
 )
+from apps.digital.services.fraud_service import FraudDetectionService
+from apps.digital.services.pricing_service import PricingService
 
 
 logger = logging.getLogger(__name__)
