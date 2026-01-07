@@ -1,12 +1,12 @@
 import uuid
 import logging
+import time
 from decimal import Decimal
 from typing import Dict, Any, Optional
 from django.db import transaction as db_transaction
 from django.utils import timezone
-from apps.digital.models import Transaction, UserPricing, DigitalProduct
-from apps.digital.services.provider_factory import ProviderFactory
-from apps.wallets.models import Wallet, WalletTransaction
+from apps.digital.models import DigitalTransaction, UserPricing, DigitalProduct
+from apps.wallets.models import Wallet, Transaction as WalletTransaction
 from core.exceptions import (
     InsufficientFundsException, 
     InvalidTransactionException, 
@@ -36,7 +36,7 @@ class DigitalService:
                          product_id: str, 
                          phone_number: str, 
                          quantity: int = 1,
-                         priority: str = 'normal') -> Transaction:
+                         priority: str = 'normal') -> DigitalTransaction:
         """
         Initiate a digital service purchase.
         
@@ -48,7 +48,7 @@ class DigitalService:
             priority: Transaction priority (low, normal, high, critical)
             
         Returns:
-            Transaction object
+            DigitalTransaction object
         """
         # Validate inputs
         if not phone_number or len(phone_number) < 10:
@@ -90,7 +90,7 @@ class DigitalService:
         transaction_id = str(uuid.uuid4()).replace('-', '')[:12].upper()
         reference = f"TXN{int(timezone.now().timestamp())}{transaction_id}"
         
-        transaction = Transaction.objects.create(
+        transaction = DigitalTransaction.objects.create(
             id=transaction_id,
             reference=reference,
             user=user,
@@ -119,7 +119,7 @@ class DigitalService:
         """
         try:
             # Get transaction
-            transaction = Transaction.objects.select_related(
+            transaction = DigitalTransaction.objects.select_related(
                 'user', 'product', 'service_type', 'network_provider'
             ).get(id=transaction_id)
             
@@ -157,15 +157,16 @@ class DigitalService:
             
             # Get provider
             try:
+                from apps.digital.services.provider_factory import ProviderFactory
                 provider = ProviderFactory.get_provider(transaction.provider)
             except ValueError as e:
                 # Unlock wallet on provider error
                 self._unlock_wallet(transaction.user)
                 raise ProviderException(f"Provider error: {str(e)}")
-            
+
             # Execute purchase with provider
             provider_response = provider.purchase(transaction)
-            
+
             # Process provider response
             if provider_response.get('status') == 'success':
                 # Complete transaction
@@ -200,7 +201,7 @@ class DigitalService:
                 
                 raise ProviderException(f"Provider transaction failed: {provider_response.get('message')}")
                 
-        except Transaction.DoesNotExist:
+        except DigitalTransaction.DoesNotExist:
             raise InvalidTransactionException("Transaction not found")
         except Exception as e:
             # Log error
