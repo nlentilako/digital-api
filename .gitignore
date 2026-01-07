@@ -4,47 +4,53 @@
 __pycache__/
 *.o
 *.obj
-*.so
-*.pyo
-*.pyd
 
 # Dependencies
 .venv/
 venv/
-env/
-.ENV/
 node_modules/
 dist/
 build/
-target/
-.gradle/
-.mypy_cache/
-.pytest_cache/
-.coverage
-coverage/
-htmlcov/
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
-*.bak
-*.cache
 
 # Environment
 .env
 .env.local
 .env.*
-*.env
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# OS
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Python specific
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+.Python
+*.so
+.libs
+*.tar.gz
+*.egg-info/
+
+# System files
 .DS_Store
 Thumbs.db
 ```
