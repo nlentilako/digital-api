@@ -1,16 +1,27 @@
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, viewsets
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404
-from apps.users.models import User as CustomUser
-from apps.digital.models import DigitalProduct, Transaction, APIKey
-from apps.wallets.models import Wallet
-from apps.digital.serializers import DigitalProductSerializer, TransactionSerializer
-from apps.users.serializers import UserSerializer
-from apps.wallets.serializers import WalletSerializer
+from django.utils import timezone
+from django.db.models import Q
+from apps.users.models import User as CustomUser, Agent, AgentTier
+from apps.digital.models import DigitalProduct, Transaction, APIKey, Order, Payment
+from apps.wallets.models import Wallet, Transaction as WalletTransaction
+from apps.digital.serializers import DigitalProductSerializer, TransactionSerializer, OrderSerializer, PaymentSerializer, APIKeySerializer
+from apps.users.serializers import UserSerializer, UserCreateSerializer, AgentApplicationSerializer, AgentSerializer, AgentTierSerializer
+from apps.wallets.serializers import WalletSerializer, WalletTransactionSerializer
+from apps.users.permissions import (
+    IsAdmin, IsEmployee, IsAgent, IsDeveloper, IsAdminOrEmployee,
+    IsOwnerOrAdmin, IsOwnerOrAdminOrEmployee, IsAdminOrEmployeeOrAgent,
+    IsPublic, CanManageUsers, CanManageAgents, CanManageProducts,
+    CanManageOrders, CanViewAllOrders, CanManageWallet, CanManageNotifications,
+    CanManageChat, CanViewReports, CanViewAuditLogs, CanManageDeveloperAPI,
+    CanManageCMS, CanViewPublishedCMS
+)
+from apps.digital.permissions import IsAPIKeyValid, IsEmployeeOrAdmin
 from apps.digital.services.digital_service import DigitalService
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import transaction
@@ -201,7 +212,7 @@ def get_current_user(request):
     Get current user details.
     """
     user = request.user
-    wallet, created = Wallet.objects.get_or_create(user=user)
+    wallet, created = Wallet.objects.get_or_create(owner=user)
     
     return Response({
         'id': str(user.id),
@@ -209,13 +220,13 @@ def get_current_user(request):
         'first_name': user.first_name,
         'last_name': user.last_name,
         'phone_number': user.phone_number,
-        'role': user.user_type,
+        'role': user.role,  # Updated to use role instead of user_type
         'is_active': user.is_active,
         'date_joined': user.date_joined.isoformat(),
         'profile': {
-            'avatar': user.avatar.url if user.avatar else None,
-            'date_of_birth': user.date_of_birth.isoformat() if user.date_of_birth else None,
-            'address': user.address
+            'avatar': getattr(user, 'avatar', None),
+            'date_of_birth': getattr(user, 'date_of_birth', None),
+            'address': getattr(user, 'address', None)
         }
     }, status=status.HTTP_200_OK)
 
@@ -235,12 +246,6 @@ def update_profile(request):
         user.last_name = request.data['last_name']
     if 'phone_number' in request.data:
         user.phone_number = request.data['phone_number']
-    if 'profile' in request.data:
-        profile_data = request.data['profile']
-        if 'date_of_birth' in profile_data:
-            user.date_of_birth = profile_data['date_of_birth']
-        if 'address' in profile_data:
-            user.address = profile_data['address']
     
     user.save()
     
@@ -250,13 +255,13 @@ def update_profile(request):
         'first_name': user.first_name,
         'last_name': user.last_name,
         'phone_number': user.phone_number,
-        'role': user.user_type,
+        'role': user.role,  # Updated to use role instead of user_type
         'is_active': user.is_active,
         'date_joined': user.date_joined.isoformat(),
         'profile': {
-            'avatar': user.avatar.url if user.avatar else None,
-            'date_of_birth': user.date_of_birth.isoformat() if user.date_of_birth else None,
-            'address': user.address
+            'avatar': getattr(user, 'avatar', None),
+            'date_of_birth': getattr(user, 'date_of_birth', None),
+            'address': getattr(user, 'address', None)
         }
     }, status=status.HTTP_200_OK)
 
@@ -626,7 +631,7 @@ def get_wallet_balance(request):
     """
     Get user wallet balance.
     """
-    wallet, created = Wallet.objects.get_or_create(user=request.user)
+    wallet, created = Wallet.objects.get_or_create(owner=request.user)
     
     return Response({
         'id': str(wallet.id),
@@ -641,7 +646,7 @@ def get_wallet_balance(request):
 @permission_classes([IsAuthenticated])
 def fund_wallet(request):
     """
-    Fund user wallet.
+    Fund user wallet (all authenticated users can fund).
     """
     amount = request.data.get('amount')
     payment_method = request.data.get('payment_method', 'paystack')
@@ -687,8 +692,16 @@ def fund_wallet(request):
 @permission_classes([IsAuthenticated])
 def request_withdrawal(request):
     """
-    Request wallet withdrawal.
+    Request wallet withdrawal (agents only).
     """
+    if request.user.role != 'agent':
+        return Response({
+            'error': {
+                'code': 'PERMISSION_DENIED',
+                'message': 'Only agents can make withdrawals'
+            }
+        }, status=status.HTTP_403_FORBIDDEN)
+    
     amount = request.data.get('amount')
     bank_code = request.data.get('bank_code')
     account_number = request.data.get('account_number')
@@ -720,7 +733,7 @@ def request_withdrawal(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     # Check wallet balance
-    wallet = Wallet.objects.get(user=request.user)
+    wallet = Wallet.objects.get(owner=request.user)
     if wallet.balance < amount:
         return Response({
             'error': {
@@ -745,11 +758,13 @@ def wallet_transaction_history(request):
     """
     Get wallet transaction history.
     """
-    # This would require a WalletTransaction model which may not exist yet
-    # For now, return an empty list
+    wallet = Wallet.objects.get(owner=request.user)
+    transactions = WalletTransaction.objects.filter(wallet=wallet).order_by('-created_at')
+    serializer = WalletTransactionSerializer(transactions, many=True)
+    
     return Response({
-        'count': 0,
-        'results': []
+        'count': transactions.count(),
+        'results': serializer.data
     }, status=status.HTTP_200_OK)
 
 
@@ -845,28 +860,11 @@ def apply_to_become_agent(request):
     """
     Apply to become an agent.
     """
-    business_name = request.data.get('business_name')
-    business_type = request.data.get('business_type')
-    business_address = request.data.get('business_address')
-    ghana_card_number = request.data.get('ghana_card_number')
-    ghana_card_image = request.data.get('ghana_card_image')
-    reason = request.data.get('reason')
-    
-    if not all([business_name, business_type, business_address, ghana_card_number, reason]):
-        return Response({
-            'error': {
-                'code': 'VALIDATION_ERROR',
-                'message': 'All required fields must be provided'
-            }
-        }, status=status.HTTP_400_BAD_REQUEST)
-    
-    # In a real implementation, you would save this application
-    # For now, just return a success message
-    return Response({
-        'message': 'Agent application submitted successfully',
-        'application_id': str(uuid.uuid4()),
-        'status': 'pending'
-    }, status=status.HTTP_201_CREATED)
+    serializer = AgentApplicationSerializer(data=request.data, context={'user': request.user})
+    if serializer.is_valid():
+        agent = serializer.save()
+        return Response(AgentSerializer(agent).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])
@@ -875,86 +873,85 @@ def get_agent_application_status(request):
     """
     Get agent application status.
     """
-    # In a real implementation, you would fetch the user's application
-    # For now, return a mock response
-    return Response({
-        'id': str(uuid.uuid4()),
-        'status': 'pending',
-        'business_name': 'Sample Business',
-        'applied_at': '2024-01-01T00:00:00Z',
-        'reviewed_at': None,
-        'reviewer_notes': None
-    }, status=status.HTTP_200_OK)
+    try:
+        agent = Agent.objects.get(user=request.user)
+        serializer = AgentSerializer(agent)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Agent.DoesNotExist:
+        return Response({'message': 'No agent application found'}, status=status.HTTP_404_NOT_FOUND)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminOrEmployee])
 def list_agents(request):
     """
     List agents (admin/employee only).
     """
-    # Check if user has admin privileges
-    if request.user.user_type not in ['admin', 'employee']:
-        return Response({
-            'error': {
-                'code': 'PERMISSION_DENIED',
-                'message': 'Only admin and employee can list agents'
-            }
-        }, status=status.HTTP_403_FORBIDDEN)
-    
-    # In a real implementation, you would fetch agents from the database
-    # For now, return an empty list
+    agents = Agent.objects.all()
+    serializer = AgentSerializer(agents, many=True)
     return Response({
-        'count': 0,
-        'results': []
+        'count': agents.count(),
+        'results': serializer.data
     }, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminOrEmployee])
 def approve_agent(request, agent_id):
     """
     Approve agent application (admin/employee only).
     """
-    # Check if user has admin privileges
-    if request.user.user_type not in ['admin', 'employee']:
-        return Response({
-            'error': {
-                'code': 'PERMISSION_DENIED',
-                'message': 'Only admin and employee can approve agents'
-            }
-        }, status=status.HTTP_403_FORBIDDEN)
+    agent = get_object_or_404(Agent, id=agent_id)
+    agent.status = 'approved'
+    agent.approved_at = timezone.now()
+    agent.approved_by = request.user
+    agent.save()
     
-    # In a real implementation, you would approve the agent
-    # For now, just return a success message
-    return Response({
-        'message': f'Agent {agent_id} approved successfully'
-    }, status=status.HTTP_200_OK)
+    # Update user role to agent
+    agent.user.role = 'agent'
+    agent.user.save()
+    
+    serializer = AgentSerializer(agent)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminOrEmployee])
 def reject_agent(request, agent_id):
     """
     Reject agent application (admin/employee only).
     """
-    # Check if user has admin privileges
-    if request.user.user_type not in ['admin', 'employee']:
-        return Response({
-            'error': {
-                'code': 'PERMISSION_DENIED',
-                'message': 'Only admin and employee can reject agents'
-            }
-        }, status=status.HTTP_403_FORBIDDEN)
+    agent = get_object_or_404(Agent, id=agent_id)
+    agent.status = 'rejected'
+    agent.rejection_reason = request.data.get('rejection_reason', '')
+    agent.save()
     
-    reason = request.data.get('reason')
-    
-    # In a real implementation, you would reject the agent
-    # For now, just return a success message
-    return Response({
-        'message': f'Agent {agent_id} rejected successfully',
-        'reason': reason
-    }, status=status.HTTP_200_OK)
+    serializer = AgentSerializer(agent)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_agent_tiers(request):
+    """
+    List agent tiers (all authenticated users can view).
+    """
+    tiers = AgentTier.objects.filter(is_active=True)
+    serializer = AgentTierSerializer(tiers, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdmin])
+def create_agent_tier(request):
+    """
+    Create agent tier (admin only).
+    """
+    serializer = AgentTierSerializer(data=request.data)
+    if serializer.is_valid():
+        tier = serializer.save()
+        return Response(AgentTierSerializer(tier).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # Transactions endpoints

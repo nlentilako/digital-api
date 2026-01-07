@@ -11,10 +11,10 @@ class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         # Allow read-only access for any request
         if request.method in permissions.SAFE_METHODS:
-            return True
+            return request.user.is_authenticated
         
         # Write permissions only for admin users
-        return request.user and request.user.user_type == 'admin'
+        return request.user and request.user.is_authenticated and request.user.role == 'admin'
 
 
 class IsOwnerOrAdmin(permissions.BasePermission):
@@ -24,7 +24,7 @@ class IsOwnerOrAdmin(permissions.BasePermission):
     
     def has_object_permission(self, request, view, obj):
         # If it's an admin, allow access
-        if request.user and request.user.user_type == 'admin':
+        if request.user and request.user.is_authenticated and request.user.role == 'admin':
             return True
         
         # Check if the object has a user attribute and it matches the request user
@@ -78,23 +78,23 @@ class IsAPIKeyValid(permissions.BasePermission):
 
 class IsAgentOrAbove(permissions.BasePermission):
     """
-    Custom permission to only allow agents, admins, or resellers.
+    Custom permission to only allow agents and roles above.
     """
     
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        return request.user.user_type in ['admin', 'agent', 'reseller']
+        return request.user.role in ['admin', 'agent', 'employee']
 
 
-class IsResellerOrAdmin(permissions.BasePermission):
+class IsEmployeeOrAdmin(permissions.BasePermission):
     """
-    Custom permission to only allow resellers or admins.
+    Custom permission to only allow employees or admins.
     """
     
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
         
-        return request.user.user_type in ['admin', 'reseller']
+        return request.user.role in ['admin', 'employee']
