@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'apps.users',
     'apps.wallets',
     'apps.digital',
+    'apps.api.v1',
 ]
 
 MIDDLEWARE = [
