@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from apps.digital.models import (
     ServiceType, NetworkProvider, DigitalProduct, 
-    Transaction, APIKey, UserPricing
+    DigitalTransaction, APIKey, UserPricing
 )
 from apps.users.models import User
 from apps.wallets.models import Wallet
@@ -42,13 +42,13 @@ class TransactionSerializer(serializers.ModelSerializer):
     network_provider = NetworkProviderSerializer(read_only=True)
     
     class Meta:
-        model = Transaction
+        model = DigitalTransaction
         fields = '__all__'
 
 
 class TransactionCreateSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Transaction
+        model = DigitalTransaction
         fields = ['product', 'phone_number', 'quantity', 'priority']
         read_only_fields = ['user', 'amount', 'price', 'status', 'reference', 'provider']
 
