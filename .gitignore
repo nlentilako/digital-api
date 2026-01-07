@@ -1,69 +1,36 @@
 ```
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
+# Compiled and build artifacts
+*.class
+*.o
+*.obj
+*.out
+target/
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# Virtual Environment
+# Dependencies
+node_modules/
 venv/
-env/
-ENV/
 .venv/
-env.bak/
-ENV.bak/
-
-# Django
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.gradle/
+# Logs and temp files
 *.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-media/
-staticfiles/
-.env
-
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-.coverage.*
-
-# IDE
-.vscode/
-.idea/
+*.tmp
 *.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Environment files
+# Environment
 .env
 .env.local
-*.env.*
+.env.*
+# Editors
+.vscode/
+.idea/
+# System files
+.DS_Store
+Thumbs.db
+# Coverage
+coverage/
+htmlcov/
+.coverage
 ```

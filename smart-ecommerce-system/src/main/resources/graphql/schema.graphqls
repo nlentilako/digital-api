@@ -1,0 +1,106 @@
+# User Types
+type User {
+    id: ID!
+    username: String!
+    email: String!
+    firstName: String!
+    lastName: String!
+    role: String!
+    enabled: Boolean!
+    createdAt: String
+    updatedAt: String
+}
+
+input UserInput {
+    username: String!
+    email: String!
+    password: String!
+    firstName: String!
+    lastName: String!
+    role: String
+    enabled: Boolean
+}
+
+# Product Types
+type Product {
+    id: ID!
+    name: String!
+    description: String!
+    price: Float!
+    quantity: Int!
+    imageUrl: String
+    active: Boolean!
+    createdAt: String
+    updatedAt: String
+    category: Category
+    seller: User
+}
+
+input ProductInput {
+    name: String!
+    description: String!
+    price: Float!
+    quantity: Int!
+    imageUrl: String
+    active: Boolean
+    categoryId: ID
+    sellerId: ID
+}
+
+# Category Types
+type Category {
+    id: ID!
+    name: String!
+    description: String
+    imageUrl: String
+    active: Boolean!
+    createdAt: String
+    updatedAt: String
+    products: [Product!]!
+}
+
+input CategoryInput {
+    name: String!
+    description: String
+    imageUrl: String
+    active: Boolean
+}
+
+# Query Types
+type Query {
+    # User Queries
+    user(id: ID!): User
+    users(page: Int, size: Int): [User!]!
+    userByUsername(username: String!): User
+    userByEmail(email: String!): User
+    
+    # Product Queries
+    product(id: ID!): Product
+    products(page: Int, size: Int): [Product!]!
+    productsByCategory(categoryId: ID!, page: Int, size: Int): [Product!]!
+    productsBySeller(sellerId: ID!, page: Int, size: Int): [Product!]!
+    searchProducts(keyword: String!, page: Int, size: Int): [Product!]!
+    
+    # Category Queries
+    category(id: ID!): Category
+    categories(page: Int, size: Int): [Category!]!
+    categoryByName(name: String!): Category
+}
+
+# Mutation Types
+type Mutation {
+    # User Mutations
+    createUser(input: UserInput!): User!
+    updateUser(id: ID!, input: UserInput!): User!
+    deleteUser(id: ID!): Boolean!
+    
+    # Product Mutations
+    createProduct(input: ProductInput!): Product!
+    updateProduct(id: ID!, input: ProductInput!): Product!
+    deleteProduct(id: ID!): Boolean!
+    
+    # Category Mutations
+    createCategory(input: CategoryInput!): Category!
+    updateCategory(id: ID!, input: CategoryInput!): Category!
+    deleteCategory(id: ID!): Boolean!
+}
